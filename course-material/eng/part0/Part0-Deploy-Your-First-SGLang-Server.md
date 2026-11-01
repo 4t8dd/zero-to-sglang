@@ -186,3 +186,37 @@ python3 -m sglang.launch_server --model-path Qwen/Qwen3-0.6B --attention-backend
 The course experiments assume an NVIDIA environment. SGLang also supports [AMD Instinct](https://docs.sglang.io/docs/hardware-platforms/amd_gpu), [Intel Xeon CPU](https://docs.sglang.io/docs/hardware-platforms/cpu_server), [Apple Silicon (experimental)](https://docs.sglang.io/docs/hardware-platforms/apple_metal) and other platforms, but later lessons are not guaranteed to work on them, so we do not recommend them for this course.
 
 If you are on a Mac or have no NVIDIA card, rent an entry-level GPU by the hour on a cloud GPU platform such as AutoDL (the cheapest card that runs Qwen3-0.6B is enough). The rented machine is a ready-made Linux environment; start from the "Python environment" section. If the course provides shared compute, we will announce it in the course group.
+
+### Notes for AutoDL
+
+The steps above work on AutoDL with two changes, one for packages and one for model weights. Tested with SGLang 0.5.23, torch 2.14.1, and an RTX 3080 Ti with CUDA Version 13.0; speeds will vary by region.
+
+**Set a mirror for uv before installing SGLang.** AutoDL presets a mirror in `pip.conf`, but uv does not read that file, so it downloads from PyPI. An install can then run for hours with no error. Point uv at a mirror first:
+
+```bash
+echo 'export UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple' >> ~/.bashrc
+export UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple
+```
+
+Then install as usual. Check `nvidia-smi` on each new instance to choose the right commands, since the CUDA Version can differ between machines.
+
+**Download the model from ModelScope.** hf-mirror fetched the small files but failed on the weights: first with a 401 error from `cas-server.xethub.hf.co`, then, with `HF_HUB_DISABLE_XET=1`, by stalling at about 10 MB. ModelScope finished the 1.5 GB download in under 2 minutes:
+
+```bash
+uv pip install modelscope
+export SGLANG_USE_MODELSCOPE=true
+python3 -m sglang.launch_server --model-path Qwen/Qwen3-0.6B --host 0.0.0.0 --port 30000
+```
+
+Set `SGLANG_USE_MODELSCOPE=true` every time you launch, or SGLang will look for the model on Hugging Face again.
+
+A few other things to expect:
+
+- Do not `source /etc/network_turbo` while installing packages. AutoDL's own note says it slows down pip sources.
+- The system disk is small (30 GB on the tested instance), and the install takes up most of it. Put larger models on `/root/autodl-tmp`.
+- After the weights load, the log can stay quiet for about 2 minutes before the "ready to roll" line. This is normal.
+- To reach the server from your own computer, open an SSH tunnel with the port and host from the AutoDL console, then use `http://localhost:30000/v1`:
+
+```bash
+ssh -L 30000:localhost:30000 -p <port> root@<host>
+```
