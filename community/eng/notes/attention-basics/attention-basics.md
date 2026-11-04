@@ -251,6 +251,57 @@ Transformers are being used in astronomy for these kinds of tasks.
 
 **The catch is size.** One image can have millions of pixels, and the score table is `T × T`, so one token per pixel is far too expensive. Vision models group pixels into patches, often 16 × 16 pixels per token, which brings `T` down to a manageable size.
 
+## The MLP layer
+
+The MLP is the second half of every Transformer layer. Attention moves information between tokens; the MLP processes each token on its own.
+
+```text
+One layer:
+  x = x + Attention(x)   # tokens exchange information
+  x = x + MLP(x)         # each token works on what it has gathered
+```
+
+The same small network runs on every token's vector separately and never looks at other tokens:
+
+```python
+up   = nn.Linear(D, 4 * D)   # expand: 64 → 256
+down = nn.Linear(4 * D, D)   # shrink back: 256 → 64
+
+def mlp(x):                      # x: (B, T, D)
+    return down(F.gelu(up(x)))   # (B, T, D), each token separately
+```
+
+1. **Expand:** more room to work in, usually about 4 times wider.
+2. **Activation:** a non-linear function such as GELU or SiLU. Without it, the two layers would collapse into one plain matrix multiplication.
+3. **Shrink:** back to `D`, then added to the residual stream.
+
+What it does:
+
+- **Stores knowledge.** The expand layer acts like a set of detectors that fire on patterns such as "capital of France"; the shrink layer adds a matching piece of information such as "Paris" (the key-value memory view, Geva et al. 2021).
+- **Processes what attention gathered.** After attention pulls in "cat" for "sat", the MLP works out what that means for this token.
+
+Qwen3-0.6B uses a gated version, SwiGLU, with three matrices:
+
+```python
+def mlp(x):
+    return down(F.silu(gate(x)) * up(x))   # 1024 → 3072 → 1024
+```
+
+Parameters per layer, from its config (`hidden_size` 1024, `intermediate_size` 3072, 16 query heads and 8 K/V heads of 128):
+
+| Part | Parameters |
+|---|---|
+| Attention: Q, K, V, O | about 6.3 million |
+| MLP: gate, up, down | about 9.4 million |
+
+The MLP holds about 60% of each layer's parameters.
+
+Why it matters for inference:
+
+- **No KV cache.** The MLP does not read other tokens, so it has nothing to cache.
+- **Weight reading dominates decode.** Every decode step reads all the MLP weights from GPU memory to process one token per request. That is a big part of why decode is memory-bound, and why batching helps: the weights are read once for the whole batch.
+- **Mixture of Experts (MoE)** replaces the single MLP with many expert MLPs and sends each token to only a few of them, so the model stores more knowledge while each token uses a small part of the weights. See Part 3, expert parallelism.
+
 ## Qwen3-0.6B as a real example
 
 From the model's `config.json`:
