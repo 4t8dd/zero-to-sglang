@@ -253,6 +253,8 @@ Transformers are being used in astronomy for these kinds of tasks.
 
 ## The MLP layer
 
+MLP stands for **Multi-Layer Perceptron**: a perceptron is an early, very simple model of a neuron, and stacking layers of them gives an MLP. In Transformers it is also called the **feed-forward network (FFN)**, the name used in the original paper.
+
 The MLP is the second half of every Transformer layer. Attention moves information between tokens; the MLP processes each token on its own.
 
 ```text
@@ -274,6 +276,17 @@ def mlp(x):                      # x: (B, T, D)
 1. **Expand:** more room to work in, usually about 4 times wider.
 2. **Activation:** a non-linear function such as GELU or SiLU. Without it, the two layers would collapse into one plain matrix multiplication.
 3. **Shrink:** back to `D`, then added to the residual stream.
+
+**Separately, but all at once.** Every token goes through the MLP independently with the same weights, but not one after another. PyTorch treats the `B × T` token vectors as rows of one matrix and multiplies them by the weights in a single operation. The tokens do not affect each other, so each gets the same result as if it ran alone.
+
+This is why batching works so well in decode. Each request adds one token per step, and the tokens from all running requests are stacked into one matrix:
+
+```text
+1 request:    read all MLP weights → process 1 token
+32 requests:  read all MLP weights → process 32 tokens
+```
+
+Reading the weights from GPU memory is the slow part, and it happens once for the whole batch. Attention cannot be stacked as simply, because each request has its own KV cache of a different length, which is why engines use special kernels and memory layouts for it.
 
 What it does:
 
