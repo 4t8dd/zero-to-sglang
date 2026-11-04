@@ -182,6 +182,49 @@ Middle layers  →  grammar, which words relate to which
 Later layers   →  meaning, facts, what the next token should be
 ```
 
+## Heads and knowledge
+
+Heads are not where knowledge is stored, and adding heads is not how a model gets better at a field.
+
+- **Heads decide how information moves.** Each one finds which tokens in the input matter to the current token and pulls their information in. Heads limit how many relationships the model can track at once within the text it is reading, not how much it knows.
+- **Knowledge is stored mostly in the MLP layers**, which also hold most of the parameters. Geva et al. (2021), "Transformer Feed-Forward Layers Are Key-Value Memories", and Meng et al. (2022, ROME), which changed specific facts by editing specific MLP weights, support this.
+
+Attention brings in the relevant context; the MLP layers bring in what the model already knows.
+
+For a knowledge-heavy field such as medicine or law:
+
+| Approach | Why it helps |
+|---|---|
+| More and better training data in the field | Matters most: a model cannot learn what it never saw |
+| Fine-tuning on the field | Adjusts existing weights without retraining from scratch |
+| A larger model overall | More parameters, especially in the MLP, give more room to store knowledge |
+| Retrieval (RAG) | Puts relevant documents in the prompt, so attention can read them at inference time |
+
+The head count is fixed when the model is designed and is the same for every topic. Heads do matter for inputs full of long-range connections, such as a contract that refers back to earlier sections or code that calls functions defined far away. Even there, the field's knowledge comes from training.
+
+## Is the usual head count too small for dense data?
+
+The idea: head counts are chosen by experiment, experiments reflect the average case, and the average case has few relationships to compute. Data with many more connections might need more heads.
+
+It is partly right: head counts are compromises tuned on the average of the training data, and no one has shown the usual numbers are best for every kind of data. But the evidence suggests the limit is smaller than it seems:
+
+1. **The training mix includes dense data.** The experiments that set these numbers train on code, math and long documents, which are among the most relationship-heavy data there is.
+2. **Relationships are not limited to one per head.**
+   - Heads are reused: the same head can do different jobs depending on the input, because Q and K are calculated from the input each time.
+   - Layers chain relationships: one layer connects A to B, a later layer connects that result to C. Multi-step reasoning mostly comes from depth, not head count.
+   - Each head has width: a 128-number head can encode a fairly rich match.
+
+   Capacity is roughly heads × layers × head size, plus the MLP, not the head count alone.
+3. **Head count matters less than expected in experiments.** Kaplan et al. (2020), "Scaling Laws for Neural Language Models", found performance depends mainly on total parameters, data and compute, and only weakly on model shape (heads, depth, width) across a wide range. GQA points the same way: models share K/V heads and lose little quality.
+
+For unusual data with very many connections at once, a different shape might work better. That is still an open question.
+
+**Experiment (Week 2, with nanoGPT on a GPU):**
+
+1. Pick a relationship-heavy dataset, such as code.
+2. Train small models with the same total size but different head counts, for example 2, 8 and 32 heads.
+3. Predict which one wins, then compare their validation loss.
+
 ## Qwen3-0.6B as a real example
 
 From the model's `config.json`:
