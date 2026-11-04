@@ -302,6 +302,21 @@ Why it matters for inference:
 - **Weight reading dominates decode.** Every decode step reads all the MLP weights from GPU memory to process one token per request. That is a big part of why decode is memory-bound, and why batching helps: the weights are read once for the whole batch.
 - **Mixture of Experts (MoE)** replaces the single MLP with many expert MLPs and sends each token to only a few of them, so the model stores more knowledge while each token uses a small part of the weights. See Part 3, expert parallelism.
 
+### Does the MLP produce each layer's output?
+
+Partly. It writes the last update in each layer, but:
+
+1. **It adds to the output rather than producing it.** A layer's output is a running total, `x_out = x_in + Attention(...) + MLP(...)`. What earlier layers wrote stays in the vector unless later layers change it. This residual stream is what the next layer receives.
+2. **It only sees one token.** That token's vector already includes what attention pulled in from other tokens in this layer, plus what all earlier layers added. The MLP never reaches into other tokens; only attention moves information between tokens. Attention collects; the MLP processes what was collected.
+3. **The prediction comes after all the layers.** After the last layer: normalize, then the LM head (a `D × vocabulary` matrix) gives a score for every token in the vocabulary. In decode, only the last token's vector is used. Every attention and MLP step across all layers adds a piece; no single place makes the answer.
+
+The full order inside one layer, with the normalization (RMSNorm in Qwen3) that keeps the numbers at a stable size:
+
+```text
+x = x + Attention(Norm(x))
+x = x + MLP(Norm(x))
+```
+
 ## Qwen3-0.6B as a real example
 
 From the model's `config.json`:
