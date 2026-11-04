@@ -225,6 +225,32 @@ For unusual data with very many connections at once, a different shape might wor
 2. Train small models with the same total size but different head counts, for example 2, 8 and 32 heads.
 3. Predict which one wins, then compare their validation loss.
 
+## What kind of data is rich in connections?
+
+It depends less on the kind of data than on the task: whether predicting each piece requires combining pieces that are far apart.
+
+| Data | Why it is dense |
+|---|---|
+| Code | A line can depend on a variable, function or type defined thousands of lines away |
+| Math proofs | Each step relies on definitions and earlier results from anywhere before it |
+| Legal contracts | Clauses refer to definitions and other sections throughout the document |
+| Proteins | Amino acids far apart in the chain can touch once the protein folds; AlphaFold relies heavily on attention for this |
+| DNA | Regions controlling a gene can be very far from the gene itself |
+| Tables and spreadsheets | Each cell relates to its row, its column and the formulas that use it |
+| Long conversations | Who said what, and who is replying to whom, spans the whole discussion |
+
+**Telescope data is mixed.**
+
+- Mostly local: in an image, nearby pixels matter most. Convolutional networks (CNNs) have long handled this well, because they look at small neighbourhoods.
+- Sometimes long-range:
+  - Gravitational lensing: distorted copies of one galaxy can appear in different parts of an image.
+  - Light curves: a pattern repeating over a long series of measurements can reveal a planet or a variable star.
+  - Survey matching: the same object has to be linked across images, spectra and catalogues.
+
+Transformers are being used in astronomy for these kinds of tasks.
+
+**The catch is size.** One image can have millions of pixels, and the score table is `T × T`, so one token per pixel is far too expensive. Vision models group pixels into patches, often 16 × 16 pixels per token, which brings `T` down to a manageable size.
+
 ## Qwen3-0.6B as a real example
 
 From the model's `config.json`:
