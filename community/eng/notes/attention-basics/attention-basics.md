@@ -14,6 +14,43 @@ The input to attention is a tensor `x` of shape `(B, T, D)`:
 
 Before attention runs, text is tokenized into IDs, shorter sequences are padded so that every sequence in the batch has the same `T`, and each ID is turned into a vector of `D` numbers. Padding tokens are not real words, so attention needs a padding mask as well as the causal mask. Inference engines try to avoid padding, because the padded slots are computed but do no useful work.
 
+Some texts write the same shape as `[batchSize, seqLen, d_model]`.
+
+### What X actually looks like
+
+A tiny example with `batchSize = 2`, `seqLen = 3`, `d_model = 4`. Text becomes token IDs (invented here), and each ID picks one row from the embedding table, a learned matrix of shape `[vocabulary size, d_model]`:
+
+```text
+"The cat sat"  → [ 791, 8415, 7731]
+"I like tea"   → [  40, 1093, 9725]
+
+X = [
+  [                                  # sequence 1: "The cat sat"
+    [ 0.12, -0.40,  0.88,  0.05],    # "The"
+    [-0.73,  0.31,  0.10,  0.66],    # "cat"
+    [ 0.27,  0.94, -0.52, -0.18],    # "sat"
+  ],
+  [                                  # sequence 2: "I like tea"
+    [ 0.45, -0.09, -0.33,  0.71],    # "I"
+    [-0.16,  0.58,  0.82, -0.47],    # "like"
+    [ 0.90, -0.25,  0.14,  0.39],    # "tea"
+  ],
+]
+shape: [2, 3, 4]
+```
+
+```python
+embedding = nn.Embedding(vocab_size, d_model)   # the learned table
+ids = torch.tensor([[791, 8415, 7731],
+                    [ 40, 1093, 9725]])          # [batchSize, seqLen]
+X = embedding(ids)                               # [batchSize, seqLen, d_model]
+```
+
+- `X[0]` is the first sentence, `[3, 4]`; `X[0][1]` is "cat", 4 numbers; `X[0][1][2]` is one number.
+- The same token always starts with the same row, wherever it appears.
+- In Qwen3-0.6B each token is 1024 numbers, so a 50-token prompt gives `[1, 50, 1024]`. In later layers, `X` is the previous layer's output: same shape, different numbers.
+- The embedding does not record word order. Some models add position information to `X`; Qwen3 uses RoPE, which rotates Q and K by each token's position, so `X` itself has no position numbers.
+
 `T` is not a fixed property of a model. It can change on every forward pass:
 
 ```text
