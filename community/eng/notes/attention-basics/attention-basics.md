@@ -51,6 +51,25 @@ X = embedding(ids)                               # [batchSize, seqLen, d_model]
 - In Qwen3-0.6B each token is 1024 numbers, so a 50-token prompt gives `[1, 50, 1024]`. In later layers, `X` is the previous layer's output: same shape, different numbers.
 - The embedding does not record word order. Some models add position information to `X`; Qwen3 uses RoPE, which rotates Q and K by each token's position, so `X` itself has no position numbers.
 
+### Where D comes from
+
+D is chosen by the model designers before training, as one of the main hyperparameters (the model's width, `hidden_size` in configs). The embedding table is then built to match, so "embedding size" and D are the same number by definition:
+
+```python
+D = 1024                                  # chosen by the designers
+embedding = nn.Embedding(vocab_size, D)   # built to match: [vocabulary size, D]
+```
+
+D is the size of the residual stream through every layer, not just the embedding:
+
+```text
+embedding          → [B, T, D]
+each layer         → takes [B, T, D], returns [B, T, D]
+LM head            → turns D numbers into a score for each vocabulary token
+```
+
+Changing it means retraining the whole model. It is independent of the vocabulary size (rows versus columns of the table). A larger D gives each token more room, but parameters and compute grow roughly with D², because the attention and MLP matrices are about D × D (D × 3D for Qwen3's MLP). D is chosen together with the number of layers, heads and head size, by experiment and scaling studies. Qwen3-0.6B uses 1,024; typical 7B–8B models use about 4,096.
+
 `T` is not a fixed property of a model. It can change on every forward pass:
 
 ```text
