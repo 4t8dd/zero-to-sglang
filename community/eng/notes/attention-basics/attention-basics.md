@@ -386,6 +386,43 @@ x = x + Attention(Norm(x))
 x = x + MLP(Norm(x))
 ```
 
+## The LM head
+
+The LM (language model) head is the last step. It turns each token's final vector of D numbers into a score for every token in the vocabulary.
+
+```python
+lm_head = nn.Linear(D, vocab_size, bias=False)   # [1024 → 151,936] for Qwen3-0.6B
+
+h = final_norm(x)            # [B, T, D] after the last layer
+logits = lm_head(h)          # [B, T, vocab_size]: one score per vocabulary token
+```
+
+1. **Logits:** raw scores, one per vocabulary token.
+2. **Softmax:** turns them into probabilities that add up to 1.
+3. **Sampling:** picks one token: greedy takes the highest; temperature, top-k and top-p add controlled randomness.
+4. **Repeat:** the chosen token is fed back in as the next input.
+
+In training, every position predicts its next token, so the model learns from a whole sentence at once. In decode, only the last token's vector matters, so engines apply the LM head to that row only.
+
+It mirrors the embedding table:
+
+```text
+embedding:  token ID → D numbers      table [vocab_size, D]
+LM head:    D numbers → score per ID  matrix [D, vocab_size]
+```
+
+Many models share the weights between them (**weight tying**); Qwen3-0.6B does (`tie_word_embeddings: true`). Each token's score is then the dot product of the final vector with that token's embedding row.
+
+It is big for a small model: 1,024 × 151,936 ≈ 156 million parameters.
+
+| Part | Parameters |
+|---|---|
+| 28 layers × about 15.7 million | about 440 million |
+| Embedding and LM head (shared) | about 156 million |
+| Total | about 0.6 billion |
+
+The table is stored once, but every decode step reads all of it for the LM head, so it is a noticeable share of decode's memory traffic.
+
 ## Qwen3-0.6B as a real example
 
 From the model's `config.json`:
@@ -399,6 +436,10 @@ From the model's `config.json`:
 | `head_dim` | 128 |
 | `max_position_embeddings` | 40,960 |
 | `torch_dtype` | bfloat16 |
+| `intermediate_size` (MLP) | 3072 |
+| `hidden_act` | silu |
+| `vocab_size` | 151,936 |
+| `tie_word_embeddings` | true |
 
 Two things to notice:
 
